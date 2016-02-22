@@ -1,0 +1,51 @@
+#!/bin/sh
+
+if xl info >/dev/null 2>/dev/null ; then
+    cores=1,7,13,19,25,31,37,43
+    swap="qw(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)"
+else
+    cores=4,28,7,31,6,30,5,29
+    prehook="modprobe msr"
+    posthook="rmmod msr"
+    swap="qw(0 4 3 7 2 6 1 5 8 12 11 15 10 14 9 13)"
+fi
+
+case "$1" in
+    pre)
+        $prehook
+	;;
+    run)
+	exec 1> "$LOGDIR/raw.dat"
+	exec rwmsr --core=$cores \
+	      0xc0010002=0x000431dea@0-1000  \
+	      0xc0010003=0x1004303f0@0-1000  \
+	      \
+	      :0xc0010006=0@0-1000 \
+	      :0xc0010007=0@0-1000
+	;;
+    post)
+        $posthook
+	perl -wlan                                       \
+	     -e 'BEGIN {                               ' \
+	     -e '  printf "time";                      ' \
+	     -e '  foreach $node (0..7) {              ' \
+	     -e '    printf " 000431dea-%s", $node;    ' \
+	     -e '  }                                   ' \
+	     -e '  foreach $node (0..7) {              ' \
+	     -e '    printf " 1004303f0-%s", $node;    ' \
+	     -e '  }                                   ' \
+	     -e '  printf "\n";                        ' \
+	     -e '}                                     ' \
+	     -e '($. <= 2) and next;                   ' \
+	     -e 'printf "%s ", shift(@F);              ' \
+	     -e '@F = map { $F[$_] }                   ' \
+	     -e "     $swap;                           " \
+	     -e 'print join(" ", @F);                  ' \
+	     "$LOGDIR/raw.dat"                           \
+	     > "$LOGDIR/dctload.dat"
+	rm "$LOGDIR/raw.dat"
+	;;
+    *)
+	exit 1
+	;;
+esac

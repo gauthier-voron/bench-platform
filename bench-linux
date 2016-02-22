@@ -1,0 +1,497 @@
+#!/bin/sh
+
+processes_short_options="hP:t:b:l:"
+processes_long_options="help,process:,title:,bgproc:,busyloop:"
+
+title=
+processes=()
+cores=()
+pins=()
+names=()
+commands=()
+tmpfs=()
+actives=()
+interls=()
+durations=()
+bgprocs=()
+busyloop=
+busypid=
+bgpids=()
+bglogs=()
+benchsets=()
+instances=()
+
+
+# Because of fucking Ubuntu sudo policies
+export PATH="$PATH:/home/gauthier/.bin"
+
+
+# Example:
+# ./bench-xen --process=foo --pin-foo '1 4 7 12'                              \
+#             --command-foo="bt.W" --name-foo="foo"
+#                                                                             \
+#             -Pbar         -pbar                                             \
+#             -cbar "cg.C"         -nbar "bar"
+
+
+
+parse_process_options()
+{
+    eval set -- `getopt -q -o "${processes_short_options}" \
+                       --long "${processes_long_options}" -n $0 -- "$@"`
+
+    while true ; do
+	case "$1" in
+	    -h|--help    ) echo "help"     ; shift         ;;
+	    -P|--process ) processes+=($2) ; shift ; shift ;;
+	    -t|--title   ) title="$2"      ; shift ; shift ;;
+	    -b|--bgproc  ) bgprocs+=($2)   ; shift ; shift ;;
+	    -l|--busyloop) busyloop="$2"   ; shift ; shift ;;
+	    --           )                   shift ; break ;;
+	esac
+    done
+}
+
+process_to_index()
+{
+    process="$1" ; shift
+
+    index=0
+    for candidate in ${processes[@]} ; do
+	if [ "x${process}" = "x${candidate}" ] ; then
+	    echo ${index}
+	    return 0
+	fi
+	index=$(( ${index} + 1 ))
+    done
+
+    return 1
+}
+
+parse_config_options()
+{
+    short_options=${processes_short_options}
+    long_options=${processes_long_options}
+
+    for process in ${processes[@]} ; do
+	long_options=${long_options},"cores-${process}:"
+	long_options=${long_options},"pin-${process}:"
+	long_options=${long_options},"name-${process}:"
+	long_options=${long_options},"command-${process}:"
+	long_options=${long_options},"interl-${process}:"
+	long_options=${long_options},"duration-${process}:"
+	long_options=${long_options},"tempfs-${process}"
+	long_options=${long_options},"active-${process}"
+    done
+
+    eval set -- `getopt -q -o "${short_options}" \
+                       --long "${long_options}" -n $0 -- "$@"`
+
+    while true ; do
+	case "$1" in
+	    --cores-*     )
+		id=`process_to_index "${1:8}"`; cores[${id}]="$2"; shift 2;;
+	    --pin-*     )
+		id=`process_to_index "${1:6}"`; pins[${id}]="$2"; shift 2;;
+	    --name-*    )
+		id=`process_to_index "${1:7}"`; names[${id}]="$2"; shift 2;;
+	    --command-* )
+		id=`process_to_index "${1:10}"`;commands[${id}]="$2"; shift 2;;
+	    --interl-*)
+		id=`process_to_index "${1:9}"`; interls[${id}]="$2"; shift 2;;
+	    --duration-*)
+		id=`process_to_index "${1:11}"`;durations[${id}]="$2";shift 2;;
+	    --tempfs-* )
+		id=`process_to_index "${1:9}"`; tempfs[${id}]="y"; shift;;
+	    --active-* )
+		id=`process_to_index "${1:9}"`; actives[${id}]="y"; shift;;
+	    -h|--help    )                         shift         ;;
+	    -P|--process )                         shift ; shift ;;
+	    -t|--title   )                         shift ; shift ;;
+	    -b|--bgproc  )                         shift ; shift ;;
+	    -l|--busyloop)                         shift ; shift ;;
+	    --           )                         shift ; break ;;
+	    *            ) echo "?? $1"          ; shift         ;;
+	esac
+    done
+}
+
+check_config_options()
+{
+    index=0
+    for process in ${processes[@]} ; do
+	command_value="${commands[${index}]}"
+	if [ "x${command_value}" = "x" ] ; then
+	    echo "$0: unspecified command value for process '${process}'" >&2
+	    exit 1
+	fi
+
+	eval set -- ${command_value}
+
+	name=${names[${index}]}
+	if [ "x${name}" = "x" ] ; then
+	    name="$1-${index}"
+	    names[${index}]="${name}"
+	fi
+
+	case "$1" in
+	    bodytrack|facesim|fluidanimate|streamcluster|swaptions|x264)
+		benchsets[${index}]=parsec
+		;;
+	    bt.?|dc.?|cg.?|ep.?|ft.?|is.?|lu.?|mg.?|sp.?|ua.?)
+	        benchsets[${index}]=npb
+		;;
+            null)
+                benchsets[${index}]=null
+                ;;
+	    *)
+		printf "$0: unknown benchset for process " >&2
+		echo   "'${process}' on command '${command_value}'" >&2
+		exit 1
+		;;
+	esac
+
+        pinning="${pins[${index}]}"
+        if [ "x${pinning}" != "x" ] ; then
+            core='[[:digit:]]+'
+            range="$core(-$core)?"
+            spec="$range(,$range)*"
+            regex="^([[:space:]]*$spec)*[[:space:]]*\$"
+            if ! echo "${pinning}" | grep -q -E "$regex" ; then
+                printf "$0: wrong pinning for machine " >&2
+                echo "'${machine}' : '${pinning}'" >&2
+                exit 1
+            fi
+
+            pins[${index}]="`printf "${pinning}" | tr '\n\t' '  '`"
+        fi
+
+	core=${cores[${index}]}
+	if [ "x$core" = "x" ] ; then
+	    core=`echo ${pins[${index}]} | wc -w`
+	    cores[${index}]=$core
+	fi
+
+	duration=${durations[${index}]}
+	if [ "x${duration}" = "x" ] ; then
+	    durations[${index}]="0"
+	elif ! echo $duration | grep -q '^[[:digit:]]*$' ; then
+		printf "$0: invalid duration for process " >&2
+		echo   "'${process}': '${duration}'" >&2
+		exit 1
+	fi
+
+	tempf=${tempfs[${index}]}
+	if [ "x${tempf}" = "x" ] ; then
+	    tempfs[${index}]="n"
+	fi
+
+	active=${actives[${index}]}
+	if [ "x${active}" = "x" ] ; then
+	    actives[${index}]="n"
+	fi
+
+	index=$(( ${index} + 1 ))
+    done
+
+    if [ "x${title}" = "x" ] ; then
+	title="bench-linux"
+    fi
+    title="${title}-"`date '+%Y-%m-%d-%H-%M-%S'`
+}
+
+
+pre_instancify()
+{
+    index=0
+    for bgproc in ${bgprocs[@]} ; do
+	bglog=`mktemp -d`
+	bglogs[${index}]="${bglog}"
+
+	export LOGDIR="${bglog}"
+	${bgproc} pre
+
+    	index=$(( ${index} + 1 ))
+    done
+}
+
+instancify_processes()
+{
+    index=0
+    for process in ${processes[@]} ; do
+	name=${names[${index}]}
+	pin=${pins[${index}]}
+	benchset=${benchsets[${index}]}
+
+	instance="process-instance-${name}"
+	instances[${index}]="${instance}"
+
+	(
+	    mkdir "${instance}"
+
+	    cp -R control-payload/param/path \
+	       "${instance}/control"
+	    cp -R "${benchset}-payload/param/path" \
+	       "${instance}/${benchset}"
+	) &
+
+	index=$(( ${index} + 1 ))
+    done
+
+    wait
+
+    index=0
+    for instance in "${instances[@]}" ; do
+	benchset=${benchsets[${index}]}
+	tempf=${tempfs[${index}]}
+	interl=${interls[${index}]}
+
+	if [ "$tempf" = "y" ] ; then
+	    (
+		cd "${instance}"
+		./control/tempfize.sh "${benchset}" "${interl}"
+	    ) &
+	fi
+
+	index=$(( ${index} + 1 ))
+    done
+
+    wait
+
+    if [ "x$busyloop" != "x" ] ; then
+	"./${instances[0]}/control/busyloop/busyloop" $busyloop &
+	busypid=$!
+    fi
+}
+
+
+wait_any()
+{
+    while [ "x$*" != "x" ] ; do
+	for pid in $@ ; do
+	    if ! kill -0 $pid 2>/dev/null ; then
+		echo $pid
+		return
+	    fi
+	done
+	sleep 1
+    done
+}
+
+run_commands()
+{
+    pids=()
+
+    # Launching background processes with the run step
+    # They should run continuously until the last main process has done
+
+    index=0
+    for bgproc in ${bgprocs[@]} ; do
+	bglog="${bglogs[${index}]}"
+
+	export LOGDIR="${bglog}"
+	${bgproc} run &
+	bgpid=$!
+
+	bgpids[${index}]="${bgpid}"
+
+	index=$(( ${index} + 1 ))
+    done
+
+    # Launching the main processes for their main run
+    # Record their pid in pids in order
+
+    index=0
+    for process in ${processes[@]} ; do
+	command=${commands[${index}]}
+	instance="${instances[${index}]}"
+	benchset=${benchsets[${index}]}
+	pinning=${pins[${index}]}
+	interl=${interls[${index}]}
+	duration=${durations[${index}]}
+	active=${actives[${index}]}
+	core=${cores[${index}]}
+
+        if [ "x$interl" != "x" ] ; then
+            interl="--interleave=$interl"
+        fi
+
+	(
+	    cd "${instance}" && \
+		    numactl ${interl} ./control/${benchset}-work.sh \
+	    		    ${command} ${duration} ${active} ${core} ${pinning}
+	) &
+	pids+=($!)
+
+	index=$(( ${index} + 1 ))
+    done
+
+    # Wait for the main run of the main processes
+    # Once such a run is done, the main process is launched again until all
+    # other main runs are done : these new runs are the waiter runs
+    # Once all main runs are done, the waiter runs are killed
+
+    waiters=()
+
+    while true ; do
+	towait=()
+	for pid in ${pids[@]} ; do
+	    if [ $pid -ne 0 ] ; then
+		towait+=($pid)
+	    fi
+	done
+
+	if [ ${#towait[@]} -eq 0 ] ; then
+	    break
+	fi
+
+	pid=`wait_any ${towait[@]}`
+	index=0
+	for p in ${pids[@]} ; do
+	    if [ $p -eq $pid ] ; then
+		command=${commands[${index}]}
+		instance="${instances[${index}]}"
+		benchset=${benchsets[${index}]}
+		pinning=${pins[${index}]}
+		interl=${interls[${index}]}
+		duration=${durations[${index}]}
+		active=${actives[${index}]}
+		core=${cores[${index}]}
+		pids[$index]=0
+
+		if [ "x$interl" != "x" ] ; then
+		    interl="--interleave=$interl"
+		fi
+
+		set -m
+		(
+		    cd "${instance}"
+		    while true ; do
+			numactl ${interl} ./control/${benchset}-work.sh \
+	    			${command} ${duration} ${active} ${core} \
+				${pinning}
+		    done
+		) &
+		waiters+=($!)
+		set +m
+	    fi
+
+	    index=$(( $index + 1 ))
+	done
+    done
+
+    # All the main runs are done here, we can kill waiter runs
+
+    for pid in ${waiters[@]} ; do
+	kill -TERM -$pid
+    done
+
+    index=0
+    for bgproc in ${bgprocs[@]} ; do
+	bgpid=${bgpids[${index}]}
+
+	if [ "x${bgpid}" != "x" ] ; then
+	    kill ${bgpid}
+	    while ps ${bgpid} >/dev/null ; do
+		sleep 1
+	    done
+	fi
+
+    	index=$(( ${index} + 1 ))
+    done
+}
+
+terminate_processes()
+{
+    mkdir "${title}"
+
+    index=0
+    for process in ${processes[@]} ; do
+	benchset=${benchsets[${index}]}
+	name="${names[${index}]}"
+	instance="${instances[${index}]}"
+	logdir="${title}/${name}"
+	tempf=${tempfs[${index}]}
+
+	(
+	    mkdir "${logdir}"
+	    mv "${instance}/control/log/"* "${logdir}"
+
+	    for d in `find "${instance}" -type d` ; do
+		mountpoint -q "$d" && umount "$d"
+	    done
+	    rm -rf "${instance}"
+	) &
+
+    	index=$(( ${index} + 1 ))
+    done
+
+    if [ "x$busypid" != "x" ] ; then
+	kill "$busypid"
+    fi
+
+    wait
+}
+
+post_terminate()
+{
+    index=0
+    for bgproc in ${bgprocs[@]} ; do
+	bglog="${bglogs[${index}]}"
+	bgproc="${bgprocs[${index}]}"
+
+	export LOGDIR="${bglog}"
+	${bgproc} post
+
+	basename="${bgproc##*/}"
+        mv "${bglog}/" "${title}/${basename}.${index}"
+
+        index=$(( ${index} + 1 ))
+    done
+
+    print_config > "${title}/config"
+
+    tar -czf "${title}.tgz" "${title}" && rm -rf "${title}"
+}
+
+print_config()
+{
+    echo "title    : $title"
+    echo "busyloop : '$busyloop'"
+
+    index=0
+    for proc in "${processes[@]}" ; do
+        echo "process    : '$proc'"
+        echo "  name     : '${names[$index]}'"
+	echo "  cores    : '${cores[$index]}'"
+        echo "  pinning  : '${pins[$index]}'"
+        echo "  command  : '${commands[$index]}'"
+	echo "  interl   : '${interls[$index]}'"
+	echo "  duration : '${durations[$index]}'"
+	echo "  tempfs   : '${tempfs[$index]}'"
+	echo "  active   : '${actives[$index]}'"
+        index=$(( $index + 1 ))
+    done
+
+    index=0
+    for bgproc in "${bgprocs[@]}" ; do
+        echo "bgproc : '$bgproc'"
+        index=$(( $index + 1 ))
+    done
+}
+
+
+parse_process_options "$@"
+parse_config_options "$@"
+check_config_options
+print_config
+
+pre_instancify
+instancify_processes
+
+run_commands
+
+terminate_processes
+post_terminate
+
+exit 0

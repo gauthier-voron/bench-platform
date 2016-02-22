@@ -1,0 +1,21 @@
+#!/bin/sh
+
+quantum="$1" ; shift
+if [ "x$quantum" = "x" ] ; then
+    quantum=30
+fi
+
+case "$1" in
+    pre)
+	xl sched-credit -s -t "$quantum"
+	;;
+    post)
+	xl sched-credit -s -t 30
+	;;
+    run)
+        exit 0
+	;;
+    *)
+	exit 1
+	;;
+esac

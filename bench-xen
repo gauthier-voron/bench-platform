@@ -1,0 +1,545 @@
+#!/bin/sh
+
+machines_short_options="hM:b:t:"
+machines_long_options="help,machine:,bgproc:,title:"
+
+title=
+machines=()
+memories=()
+vcpus=()
+pins=()
+names=()
+commands=()
+tmpfs=()
+actives=()
+durations=()
+busyloops=()
+bgprocs=()
+bgpids=()
+bglogs=()
+benchsets=()
+instances=()
+
+
+# Because of fucking Ubuntu sudo policies
+export PATH="$PATH:/home/gauthier/.bin"
+
+
+# Example:
+# ./bench-xen --machine=foo --memory-foo=8000 --vcpus-foo=32 --pin-foo        \
+#             --command-foo="bt.W" --name-foo="foo" --bgproc="./xen-carrefour"\
+#                                                                             \
+#             -Mbar         -mbar 16000       -vbar 16       -pbar            \
+#             -cbar "cg.C"         -nbar "bar"      -b "./xen-carrefour"
+
+
+
+parse_machine_options()
+{
+    eval set -- `getopt -q -o "${machines_short_options}" \
+                       --long "${machines_long_options}" -n $0 -- "$@"`
+
+    while true ; do
+	case "$1" in
+	    -h|--help   ) echo "help"    ; shift         ;;
+	    -M|--machine) machines+=($2) ; shift ; shift ;;
+	    -t|--title  ) title="$2"     ; shift ; shift ;;
+	    -b|--bgproc ) bgprocs+=("$2"); shift ; shift ;;
+	    --          )                  shift ; break ;;
+	esac
+    done
+}
+
+machine_to_index()
+{
+    machine="$1" ; shift
+
+    index=0
+    for candidate in ${machines[@]} ; do
+	if [ "x${machine}" = "x${candidate}" ] ; then
+	    echo ${index}
+	    return 0
+	fi
+	index=$(( ${index} + 1 ))
+    done
+
+    return 1
+}
+
+parse_config_options()
+{
+    short_options=${machines_short_options}
+    long_options=${machines_long_options}
+
+    for machine in "${machines[@]}" ; do
+	long_options=${long_options},"memory-${machine}:"
+	long_options=${long_options},"vcpus-${machine}:"
+	long_options=${long_options},"pin-${machine}:"
+	long_options=${long_options},"tpin-${machine}:"
+	long_options=${long_options},"name-${machine}:"
+	long_options=${long_options},"command-${machine}:"
+	long_options=${long_options},"busyloop-${machine}:"
+	long_options=${long_options},"duration-${machine}:"
+	long_options=${long_options},"tempfs-${machine}"
+	long_options=${long_options},"active-${machine}"
+    done
+
+    eval set -- `getopt -q -o "${short_options}" \
+                       --long "${long_options}" -n $0 -- "$@"`
+
+    while true ; do
+	case "$1" in
+	    -h|--help   )                          shift         ;;
+	    -M|--machine)                          shift ; shift ;;
+	    -t|--title  )                          shift ; shift ;;
+            -b|--bgproc )                          shift ; shift ;;
+	    --memory-*  )
+		id=`machine_to_index "${1:9}"`; memories[${id}]="$2"; shift 2;;
+	    --vcpus-*   )
+		id=`machine_to_index "${1:8}"`; vcpus[${id}]="$2"; shift 2;;
+	    --pin-*     )
+		id=`machine_to_index "${1:6}"`; pins[${id}]="$2"; shift 2;;
+	    --tpin-*     )
+		id=`machine_to_index "${1:7}"`; tpins[${id}]="$2"; shift 2;;
+	    --name-*    )
+		id=`machine_to_index "${1:7}"`; names[${id}]="$2"; shift 2;;
+	    --command-* )
+		id=`machine_to_index "${1:10}"`;commands[${id}]="$2"; shift 2;;
+	    --busyloop-* )
+		id=`machine_to_index "${1:11}"`;busyloops[${id}]="$2";shift 2;;
+	    --duration-* )
+		id=`machine_to_index "${1:11}"`;durations[${id}]="$2";shift 2;;
+	    --tempfs-* )
+		id=`machine_to_index "${1:9}"`; tempfs[${id}]="y"; shift;;
+	    --active-* )
+		id=`machine_to_index "${1:9}"`; actives[${id}]="y"; shift;;
+	    --          )                          shift ; break ;;
+	    *           ) echo "?? $1"           ; shift         ;;
+	esac
+    done
+}
+
+check_config_options()
+{
+    index=0
+    for machine in ${machines[@]} ; do
+	memory_value="${memories[${index}]}"
+	if [ "x${memory_value}" = "x" ] ; then
+	    echo "$0: unspecified memory value for machine '${machine}'" >&2
+	    exit 1
+	fi
+
+	vcpus_value="${vcpus[${index}]}"
+	if [ "x${vcpus_value}" = "x" ] ; then
+	    echo "$0: unspecified vcpus value for machine '${machine}'" >&2
+	    exit 1
+	fi
+
+	command_value="${commands[${index}]}"
+	if [ "x${command_value}" = "x" ] ; then
+	    echo "$0: unspecified command value for machine '${machine}'" >&2
+	    exit 1
+	fi
+
+	eval set -- ${command_value}
+
+	case "$1" in
+	    bodytrack|facesim|fluidanimate|streamcluster|swaptions|x264)
+		benchsets[${index}]=parsec
+		;;
+	    bt.?|dc.?|cg.?|ep.?|ft.?|is.?|lu.?|mg.?|sp.?|ua.?)
+	        benchsets[${index}]=npb
+		;;
+	    null)
+		benchsets[${index}]=null
+		;;
+	    *)
+		printf "$0: unknown benchset for machine " >&2
+		echo   "'${machine}' on command '${command_value}'" >&2
+		exit 1
+		;;
+	esac
+
+	pinning="${pins[${index}]}"
+	if [ "x${pinning}" != "x" ] ; then
+	    core='[[:digit:]]+'
+	    range="$core(-$core)?"
+	    spec="$range(,$range)*"
+	    regex="^([[:space:]]*$spec)*[[:space:]]*\$"
+	    if ! echo "${pinning}" | grep -q -E "$regex" ; then
+		printf "$0: wrong pinning for machine " >&2
+		echo "'${machine}' : '${pinning}'" >&2
+		exit 1
+	    fi
+
+	    pins[${index}]="`printf "${pinning}" | tr '\n\t' '  '`"
+	fi
+
+	pinning="${tpins[${index}]}"
+	if [ "x${pinning}" != "x" ] ; then
+	    core='[[:digit:]]+'
+	    range="$core(-$core)?"
+	    spec="$range(,$range)*"
+	    regex="^([[:space:]]*$spec)*[[:space:]]*\$"
+	    if ! echo "${pinning}" | grep -q -E "$regex" ; then
+		printf "$0: wrong tpinning for machine " >&2
+		echo "'${machine}' : '${pinning}'" >&2
+		exit 1
+	    fi
+
+	    tpins[${index}]="`printf "${pinning}" | tr '\n\t' '  '`"
+	elif [ "x${pins[${index}]}" != "x" ] ; then
+	    pinning="`seq 0 $(( $vcpus_value - 1 ))`"
+	    tpins[${index}]="`printf "${pinning}" | tr '\n\t' '  '`"
+	fi
+
+	duration=${durations[${index}]}
+	if [ "x${duration}" = "x" ] ; then
+	    durations[${index}]="0"
+	elif ! echo $duration | grep -q '^[[:digit:]]*$' ; then
+		printf "$0: invalid duration for machine " >&2
+		echo   "'${machine}': '${duration}'" >&2
+		exit 1
+	fi
+
+	tempf=${tempfs[${index}]}
+	if [ "x${tempf}" = "x" ] ; then
+	    tempfs[${index}]="n"
+	fi
+
+	active=${actives[${index}]}
+	if [ "x${active}" = "x" ] ; then
+	    actives[${index}]="n"
+	fi
+
+	index=$(( ${index} + 1 ))
+    done
+
+    if [ "x${title}" = "x" ] ; then
+	title="bench-xen"
+    fi
+    title="${title}-"`date '+%Y-%m-%d-%H-%M-%S'`
+}
+
+
+pre_instancify()
+{
+    index=0
+    for bgproc in "${bgprocs[@]}" ; do
+	bglog=`mktemp -d`
+	bglogs[${index}]="${bglog}"
+
+	export LOGDIR="${bglog}"
+	${bgproc} pre
+
+    	index=$(( ${index} + 1 ))
+    done
+}
+
+instancify_machines()
+{
+    base="vm-hvm-base"
+
+    index=0
+    for machine in ${machines[@]} ; do
+	iplast=$(( 2 + ${index} ))
+	ip="192.168.0.${iplast}"
+	name=${names[${index}]}
+	memory=${memories[${index}]}
+	vcpus=${vcpus[${index}]}
+	pin=${pins[${index}]}
+	benchset=${benchsets[${index}]}
+
+	if [ "x${name}" = "x" ] ; then
+	    name="${ip}"
+	    names[${index}]="${name}"
+	fi
+
+	instance="vm-hvm-instance-${name}"
+	instances[${index}]="${instance}"
+
+	(
+	    cp -R "${base}" "${instance}"
+	    echo "${ip}"     > "${instance}/param/ip"
+	    echo "24"        > "${instance}/param/ipmask"
+	    echo "${memory}" > "${instance}/param/memory"
+	    echo "${pin}"    > "${instance}/param/pin"
+	    echo "pty"       > "${instance}/param/serial"
+	    echo "${vcpus}"  > "${instance}/param/vcpus"
+	    echo "xenbr0"    > "${instance}/param/vif"
+	    echo "${name}"   > "${instance}/param/name"
+
+	    cp control-payload/param/image \
+	       "${instance}/param/disk/control.ext4"
+	    cp "${benchset}-payload/param/image" \
+	       "${instance}/param/disk/${benchset}.ext4"
+	) &
+
+	index=$(( ${index} + 1 ))
+    done
+
+    wait
+
+    for instance in "${instances[@]}" ; do
+	"./${instance}/method/boot" &
+    done
+
+    wait
+
+    index=0
+    for instance in "${instances[@]}" ; do
+	benchset=${benchsets[${index}]}
+	tempf=${tempfs[${index}]}
+
+	if [ "$tempf" = "y" ] ; then
+	    "./${instance}/method/ssh" "/home/control/tempfize.sh" \
+				       "${benchset}" &
+	fi
+
+	index=$(( ${index} + 1 ))
+    done
+
+    wait
+
+    index=0
+    for machine in ${machines[@]} ; do
+	busyloop=${busyloops[${index}]}
+
+	if [ "x$busyloop" = "x" ] ; then
+	    continue
+	fi
+
+	(
+	    "./${instance}/method/ssh" \
+		"nohup /home/control/busyloop/busyloop $busyloop " \
+		">/dev/null 2>/dev/null &"
+	) &
+
+	index=$(( ${index} + 1 ))
+    done
+
+    wait
+}
+
+
+wait_any()
+{
+    while [ "x$*" != "x" ] ; do
+	for pid in $@ ; do
+	    if ! kill -0 $pid 2>/dev/null ; then
+		echo $pid
+		return
+	    fi
+	done
+	sleep 1
+    done
+}
+
+run_commands()
+{
+    pids=()
+
+    # Launching background processes with the run step
+    # They should run continuously until the last main process has done
+
+    index=0
+    for bgproc in "${bgprocs[@]}" ; do
+	bglog="${bglogs[${index}]}"
+
+	export LOGDIR="${bglog}"
+	${bgproc} run &
+	bgpid=$!
+
+	bgpids[${index}]="${bgpid}"
+
+	index=$(( ${index} + 1 ))
+    done
+
+    # Launching the machines for their main run
+    # Record their ssh pid in pids in order
+
+    index=0
+    for machine in ${machines[@]} ; do
+	command=${commands[${index}]}
+	instance="${instances[${index}]}"
+	benchset=${benchsets[${index}]}
+	duration=${durations[${index}]}
+	active=${actives[${index}]}
+	vcpus=${vcpus[${index}]}
+	tpin=${tpins[${index}]}
+
+	(
+	    "./${instance}/method/ssh" "/home/control/${benchset}-work.sh" \
+				       ${command} ${duration} ${active} \
+				       ${vcpus} ${tpin}
+
+	) &
+	pids+=($!)
+
+	index=$(( ${index} + 1 ))
+    done
+
+    # Wait for the main run of the machines
+    # Once such a run is done, the machine is launched again until all
+    # other machines are done : these new runs are the waiter runs
+    # Once all main runs are done, the waiter runs are killed
+
+    waiters=()
+
+    while true ; do
+	towait=()
+	for pid in ${pids[@]} ; do
+	    if [ $pid -ne 0 ] ; then
+		towait+=($pid)
+	    fi
+	done
+
+	if [ ${#towait[@]} -eq 0 ] ; then
+	    break
+	fi
+
+	pid=`wait_any ${towait[@]}`
+	index=0
+	for p in ${pids[@]} ; do
+	    if [ $p -eq $pid ] ; then
+		command=${commands[${index}]}
+		instance="${instances[${index}]}"
+		benchset=${benchsets[${index}]}
+		duration=${durations[${index}]}
+		active=${actives[${index}]}
+		vcpus=${vcpus[${index}]}
+		tpin=${tpins[${index}]}
+		pids[$index]=0
+
+		set -m
+		(
+		    while true ; do
+			"./${instance}/method/ssh" \
+			    "/home/control/${benchset}-work.sh" \
+			    ${command} ${duration} ${active} ${vcpus} ${tpin}
+		    done
+		) &
+		waiters+=($!)
+		set +m
+	    fi
+
+	    index=$(( $index + 1 ))
+	done
+    done
+
+    # All the main runs are done here, we can kill waiter runs
+
+    for pid in ${waiters[@]} ; do
+	kill -TERM -$pid
+    done
+
+    index=0
+    for bgproc in ${bgprocs[@]} ; do
+	bgpid=${bgpids[${index}]}
+
+	if [ "x${bgpid}" != "x" ] && ps ${bgpid} >/dev/null ; then
+	    kill ${bgpid}
+	    while ps ${bgpid} >/dev/null ; do
+		sleep 1
+	    done
+	fi
+
+    	index=$(( ${index} + 1 ))
+    done
+}
+
+terminate_machines()
+{
+    mkdir "${title}"
+
+    index=0
+    for machine in ${machines[@]} ; do
+	name="${names[${index}]}"
+	instance="${instances[${index}]}"
+	logdir="${title}/${name}"
+	bglog="${bglogs[${index}]}"
+
+	(
+	    mkdir "${logdir}"
+	    "./${instance}/method/scp" ":/home/control/log/*" "${logdir}"
+	    "./${instance}/method/poweroff"
+	    rm -rf "${instance}"
+	) &
+
+    	index=$(( ${index} + 1 ))
+    done
+
+    index=0
+    for bgproc in ${bgprocs[@]} ; do
+        bglog="${bglogs[${index}]}"
+
+        index=$(( ${index} + 1 ))
+    done
+
+    wait
+}
+
+post_terminate()
+{
+    [ -d "${title}" ] || mkdir "${title}"
+
+    index=0
+    for bgproc in "${bgprocs[@]}" ; do
+	bglog="${bglogs[${index}]}"
+	bgproc="${bgprocs[${index}]}"
+
+	export LOGDIR="${bglog}"
+	${bgproc} post
+
+	basename="${bgproc##*/}"
+        mv "${bglog}/" "${title}/${basename}.${index}"
+
+        index=$(( ${index} + 1 ))
+    done
+
+    print_config > "${title}/config"
+
+    tar -czf "${title}.tgz" "${title}" && rm -rf "${title}"
+}
+
+print_config()
+{
+    echo "title : $title"
+
+    index=0
+    for mac in "${machines[@]}" ; do
+        echo "machine    : '$mac'"
+        echo "  name     : '${names[$index]}'"
+        echo "  memory   : '${memories[$index]}'"
+        echo "  vcpus    : '${vcpus[$index]}'"
+        echo "  pinning  : '${pins[$index]}'"
+        echo "  tpinning : '${tpins[$index]}'"
+        echo "  command  : '${commands[$index]}'"
+	echo "  busyloop : '${busyloops[$index]}'"
+	echo "  duration : '${durations[$index]}'"
+	echo "  tempfs   : '${tempfs[$index]}'"
+	echo "  active   : '${actives[$index]}'"
+        index=$(( $index + 1 ))
+    done
+
+    index=0
+    for bgproc in "${bgprocs[@]}" ; do
+        echo "bgproc : '$bgproc'"
+        index=$(( $index + 1 ))
+    done
+}
+
+parse_machine_options "$@"
+parse_config_options "$@"
+check_config_options
+print_config
+
+pre_instancify
+instancify_machines
+
+run_commands
+
+terminate_machines
+post_terminate
+
+exit 0

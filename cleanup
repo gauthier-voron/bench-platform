@@ -1,0 +1,4 @@
+#!/bin/sh
+
+rm -rf "vm-hvm-instance-"*
+rm -rf "process-instance-"*

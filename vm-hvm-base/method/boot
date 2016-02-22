@@ -1,0 +1,61 @@
+#!/bin/sh
+
+# Getting the self root
+
+self="${0%method/*}"
+
+cd "${self}" || exit 1
+
+
+# Permission checking
+
+if [ `whoami` != "root" ] ; then
+    echo "$0: you must be root" >&2
+    exit 1
+fi
+
+
+if ! ./method/_prepare ; then
+    err=$?
+    echo "$0: unable to setup" >&2
+    exit $err
+fi
+
+if ! xl create "private/xen-config" >/dev/null ; then
+    err=$?
+    echo "$0: unable to boot" >&2
+    exit $err
+fi
+
+
+# Wait for the VM to be operational
+
+while true ; do
+    ssh -o StrictHostKeyChecking=no `cat private/cache/param/ip` "uname -a" >/dev/null 2>/dev/null && break
+    sleep 5
+done
+
+
+# Now we are sure all the vcpus are initialized, we can apply the real pin
+# setting which we cannot put in the configuration file
+
+cache_param="private/cache/param"
+vcpus=`cat ${cache_param}/vcpus`
+pin=`cat ${cache_param}/pin`
+name=`cat "${cache_param}/name"`
+id=`xl domid "${name}"`
+
+if [ "x${pin}" != "x" ] ; then
+    vcpu=0
+
+    while [ $vcpu -lt $vcpus ] ; do
+	for spec in ${pin}; do
+	    xl vcpu-pin $id $vcpu $spec
+	    
+	    vcpu=$(( $vcpu + 1 ))
+	    if [ $vcpu -eq $vcpus ] ; then
+		break
+	    fi
+	done
+    done
+fi

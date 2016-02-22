@@ -1,0 +1,21 @@
+#!/bin/sh
+
+
+case "$1" in
+    pre)
+	if ! lsmod | grep carrefour ; then
+	    insmod ~/.modules/carrefour.ko
+	fi
+	;;
+    post)
+	rmmod carrefour
+	;;
+    run)
+	exec  >"${LOGDIR}/linux-carrefour-out.log"
+	exec 2>"${LOGDIR}/linux-carrefour-err.log"
+	exec carrefour-kthp --disable-kthp
+	;;
+    *)
+	exit 1
+	;;
+esac

@@ -1,0 +1,53 @@
+#!/bin/sh
+
+cache_param="private/cache/param"
+cache_disk="private/cache/disk"
+
+
+image_root=`./method/_mount_image`
+
+if [ "x${image_root}" = "x" ] ; then
+    exit $?
+fi
+
+
+name=`cat "${cache_param}/name"`
+echo "${name}" > "${image_root}/etc/hostname"
+
+ip=`cat "${cache_param}/ip"`
+ipmask=`cat "${cache_param}/ipmask"`
+(
+    echo "Description='Generated Virtual Machine IP'"
+    echo "Interface=eth0"
+    echo "Connection=ethernet"
+    echo "IP=static"
+    echo "Address=('${ip}/${ipmask}')"
+    echo "Gateway='192.168.0.1'"
+) > "${image_root}/etc/netctl/eth0-static"
+
+for d in "${image_root}/home/"* ; do
+    if [ -e "${d}" ] ; then
+	rmdir "${d}"
+    fi
+done
+
+(
+    echo "/dev/xvda1 / ext4 rw,relatime,data=ordered 0 1"
+    
+    for f in "${cache_disk}/"* ; do
+	if [ ! -e "${f}" ] ; then
+	    break
+	fi
+	file="${f##*/}"
+	{
+	    read path
+	    read pmnt
+	    read ptype
+	} < "${f}"
+	mkdir "${image_root}/home/${pmnt}"
+	echo "/dev/${file} /home/${pmnt} ${ptype} rw,relatime,data=ordered 0 2"
+    done
+) > "${image_root}/etc/fstab"
+
+
+./method/_umount "${image_root}"

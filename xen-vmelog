@@ -1,0 +1,26 @@
+#!/bin/sh
+
+
+case "$1" in
+    pre)
+	;;
+    post)
+	;;
+    run)
+	exec 1> "${LOGDIR}/dmesg.log"
+
+	xen-trigger -20
+
+	while true ; do
+	    sleep 3600 &
+	    pid=$!
+	    trap "xen-trigger -20 ; xl dmesg ; kill $pid ; exit 0" SIGINT
+	    trap "xen-trigger -20 ; xl dmesg ; kill $pid ; exit 0" SIGTERM
+	    wait
+            kill $pid
+	done
+	;;
+    *)
+	exit 1
+	;;
+esac

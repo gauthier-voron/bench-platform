@@ -1,0 +1,6 @@
+#!/bin/sh
+
+mntp="$1" ; shift
+
+umount "${mntp}"
+rmdir "${mntp}"

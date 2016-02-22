@@ -1,0 +1,17 @@
+#!/bin/sh
+
+
+case "$1" in
+    pre)
+	xen-trigger -19 u0
+	;;
+    post)
+	xen-trigger -19 u18
+	;;
+    run)
+        exit 0
+	;;
+    *)
+	exit 1
+	;;
+esac

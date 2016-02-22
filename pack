@@ -1,0 +1,23 @@
+#!/bin/sh
+
+name="$1"
+
+if [ "x$name" != "x" ] ; then
+    name="$name-"
+fi
+
+date=`date '+%Y-%m-%d-%H-%M-%S'`
+dir="${name}pack-$date"
+
+mkdir "$dir"
+mkdir "$dir/amd48c"
+mv *.tgz "$dir/amd48c"
+
+cd "$dir/amd48c"
+for f in *.tgz ; do
+    tar -xzf "$f" && rm "$f"
+done
+cd ..
+
+tar -czf amd48c.tgz amd48c
+rm -rf amd48c

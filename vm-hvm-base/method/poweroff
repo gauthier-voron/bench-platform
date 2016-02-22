@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# Getting the self root
+
+self="${0%method/*}"
+
+cd "${self}" || exit 1
+
+
+# Permission checking
+
+if [ `whoami` != "root" ] ; then
+    echo "$0: you must be root" >&2
+    exit 1
+fi
+
+
+name=`cat "private/cache/param/name"`
+id=`xl domid "${name}"`
+
+xl shutdown "${name}" >/dev/null
+
+while xl list | perl -wlan -e 'print $F[-5]' | grep -q "^${id}$" ; do
+    sleep 1
+done

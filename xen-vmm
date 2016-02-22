@@ -1,0 +1,36 @@
+#!/bin/sh
+
+
+dumpvmm()
+{
+    xl list \
+    | tail -n +2 \
+    | perl -wpl -e 's/^.*(\d+)\s+\d+\s+\d+\s+\D+\s+\d+(\.\d+)?$/$1/' \
+    | while read id ; do
+        xen-trigger -4 u$id
+    done
+    xl dmesg
+}
+
+
+case "$1" in
+    pre)
+	;;
+    post)
+	;;
+    run)
+	exec 1> "${LOGDIR}/dmesg.log"
+
+	while true ; do
+	    sleep 3600 &
+	    pid=$!
+	    trap "dumpvmm ; kill $pid ; exit 0" SIGINT
+	    trap "dumpvmm ; kill $pid ; exit 0" SIGTERM
+	    wait
+            kill $pid
+	done
+	;;
+    *)
+	exit 1
+	;;
+esac

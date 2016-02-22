@@ -1,0 +1,78 @@
+#!/bin/sh
+
+if xl info >/dev/null 2>/dev/null ; then
+    cores=0,6,12,18,24,30,36,42
+    swap="qw(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31)"
+else
+    cores=0,24,3,27,2,26,1,25
+    prehook="modprobe msr"
+    posthook="rmmod msr"
+    swap="qw(0 4 3 7 2 6 1 5 8 12 11 15 10 14 9 13 16 20 19 23 18 22 17 21 24 28 27 31 26 30 25 29)"
+fi
+
+case "$1" in
+    pre)
+        $prehook
+	;;
+    run)
+	exec 1> "$LOGDIR/raw.dat"
+	exec rwmsr --core=$cores \
+	      :xc0010004@000-500              :xc0010005@000-500              \
+	      :xc0010006@000-500              :xc0010007@000-500              \
+	                                                                      \
+	       xc0010000=0x0004337f6@010-1000  xc0010000=0x00043b7f6@510-1000 \
+	       xc0010001=0x0004337f7@010-1000  xc0010001=0x00043b7f7@510-1000 \
+	       xc0010002=0x0004337f8@010-1000  xc0010002=0x00043b7f8@510-1000 \
+	       xc0010003=0x1004337f9@010-1000  xc0010003=0x10043b7f9@510-1000 \
+	                                                                      \
+	       xc0010004=0@020-500             xc0010005=0@020-500            \
+	       xc0010006=0@020-500             xc0010007=0@020-500
+	;;
+    post)
+        $posthook
+	perl -wlan \
+	     -e 'BEGIN {
+                     printf "time";
+                     foreach $event (qw(0004337f6 00043b7f6 0004337f7
+                                        00043b7f7 0004337f8 00043b7f8
+                                        1004337f9 10043b7f9)) {
+                         foreach $node (0..7) {
+                             printf " %s-%d", $event, $node;
+                         }
+                     }
+                     printf "\n";
+                 }
+                 ($. <= 2) and next;
+
+                 $time = shift(@F);
+                 $step++;
+
+                 @F = map { $F[$_] }                      ' -e "
+                     $swap;                               " -e '
+ 
+                 if ($step == 1) {
+                     @tmp = @F;
+                     next;
+                 }
+
+                 printf "%s", $time;
+
+                 foreach (qw(00043--f6 00043--f7 00043--f8 10043--f9)) {
+                     foreach (0..7) {
+                         printf " %s", shift(@tmp) * 2;
+                     }
+                     foreach (0..7) {
+                         printf " %s", shift(@F) * 2;
+                     }
+                 }
+
+                 printf "\n";
+                 $step = 0;'    \
+	     "$LOGDIR/raw.dat"  \
+	     > "$LOGDIR/memload.dat"
+	rm "$LOGDIR/raw.dat"
+	;;
+    *)
+	exit 1
+	;;
+esac
