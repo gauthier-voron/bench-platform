@@ -1,0 +1,75 @@
+#!/bin/sh
+
+# Getting the self root
+
+self="${0%method/*}"
+
+cd "${self}" || exit 1
+
+
+# Permission checking
+
+if [ `whoami` != "root" ] ; then
+    echo "$0: you must be root" >&2
+    exit 1
+fi
+
+
+if ! ./method/_check_param "path" "fs" "size" ; then
+    exit $?
+fi
+
+path="param/path"
+fs=`cat param/fs`
+size=`cat param/size 2>/dev/null`
+
+if [ "x${size}" = "x" ] ; then
+    size=`du -s "${path}" | awk '{print $1}'`
+    size=$(( ${size} + 1000000 ))
+    size="${size}K"
+fi
+
+unit=`echo "${size}" | sed -r 's/^.*(.)$/\1/'`
+size=`echo "${size}" | sed -r 's/^(.*).$/\1/'`
+case "${unit}" in
+    k | K)
+	size=$(( ${size} * 1024 ))
+	;;
+    m | M)
+	size=$(( ${size} * 1024 * 1024 ))
+	;;
+    g | G)
+	size=$(( ${size} * 1024 * 1024 * 1024 ))
+	;;
+    *)
+	size=${size}${unit}
+	;;
+esac
+
+
+file=`mktemp private/image.XXXXXXXXX`
+
+if ! truncate -s "${size}" "${file}" ; then
+    echo "$0: cannot allocate ${size} bytes on disk" >&2
+    rm "${file}"
+    exit 2
+fi
+
+if ! (yes | mkfs."${fs}" -F "${file}" >/dev/null 2>/dev/null) ; then
+    echo "$0: cannot format with filesystem ${fs}" >&2
+    rm "${file}"
+    exit 2
+fi
+
+mntp=`mktemp -d`
+
+if ! mount -o loop "${file}" "${mntp}" ; then
+    exit 3
+fi
+
+rsync -aAHXzsq --delete-delay "${path}/" "${mntp}/"
+
+umount "${mntp}"
+rmdir "${mntp}"
+
+mv "${file}" "param/image"
