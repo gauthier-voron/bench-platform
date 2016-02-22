@@ -1,0 +1,48 @@
+#!/bin/sh
+
+bin="$1" ; shift
+lib="$1" ; shift
+res="$1" ; shift
+
+cores=`grep '^apicid' /proc/cpuinfo | wc -l`
+redo=5
+
+tempfile="$res.tmp"
+trap "rm $tempfile ; exit 0" SIGINT
+
+
+(
+    echo "core,yield,delay,time-raw,time-ld,overhead"
+    
+    for c in `seq 1 $cores` ; do
+	for yield in y n ; do
+	    opts=
+	    if [ $yield = "y" ] ; then
+		opts=-y
+	    fi
+	    
+	    for delay in 100 1000 10000 100000 ; do
+
+		raw=0
+		for run in `seq 1 $redo` ; do
+		    export LD_PRELOAD=
+		    tmp=`"./$bin" $opts $c 1000000 $delay`
+		    raw=$(( $raw + $tmp ))
+		done
+		raw=$(( $raw / $redo ))
+
+		ld=0
+		for run in `seq 1 $redo` ; do
+		    export LD_PRELOAD="$lib"
+		    export CHRONOMETER_OUTPUT="$tempfile"
+		    tmp=`"./$bin" $opts $c 1000000 $delay`
+		    ld=$(( $ld + $tmp ))
+		done
+		ld=$(( $ld / $redo ))
+
+		cost=$(( ( $ld * 100 ) / $raw - 100 ))
+		printf "%d,%s,%d,%d,%d,%s\n" $c $yield $delay $raw $ld $cost
+	    done
+	done
+    done
+) | tee "$res"

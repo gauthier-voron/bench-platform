@@ -1,0 +1,46 @@
+#!/bin/sh
+
+for param in "$@" ; do
+    case "${param}" in
+	path)
+	    path="param/path"
+	    if [ ! -e "${path}" ] ; then
+		echo "$0: bad parameter path: '${path}'" >&2
+		exit 2
+	    fi
+	    ;;
+
+	fs)
+	    fs=`cat "param/fs" 2>/dev/null`
+	    if [ "x$path" = "x" ] ; then
+		echo "$0: missing parameter fs" >&2
+		exit 2
+	    fi
+	    if ! which mkfs."${fs}" >/dev/null ; then
+		echo "$0: bad parameter fs: '${fs}'" >&2
+		exit 2
+	    fi
+	    ;;
+
+	size)
+	    size=`cat "param/size" 2>/dev/null`
+	    if [ "x${size}" != "x" ] && ! echo "${size}" | \
+		       grep -E -q '^[0-9]+[kKmMgG]?$' ; then
+		echo "$0: bad parameter size: '${size}'" >&2
+		exit 2
+	    fi
+	    ;;
+
+	image)
+	    if [ ! -e "param/image" ] ; then
+		echo "$0: missing parameter image" >&2
+		exit 2
+	    fi
+	    ;;
+
+	*)
+	    echo "$0: unknown parameter '${param}'" >&2
+	    exit 255
+	    ;;
+    esac
+done
