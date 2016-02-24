@@ -53,7 +53,7 @@ cd "$prevpwd"
 cp -R "$DATA/base-payload" "$PAYLOAD"
 echo ext4 > "$PAYLOAD/param/fs"
 echo 40G > "$PAYLOAD/param/size"
-rmdir "$PAYLOAD/param/path"
+rm -rf "$PAYLOAD/param/path"
 mv "$fakeroot/NPB3.3.1" "$PAYLOAD/param/path"
 
 
