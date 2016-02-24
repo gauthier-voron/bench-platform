@@ -1,0 +1,10 @@
+Installation instructions
+=========================
+
+After cloning the repository, the platform is not yet ready to go. You must run
+the ./install/install.sh script which download the missing components (like
+disk images and benchmark sources) finalize the installation.
+
+The install operation should be local only. The install scripts will ask you
+for sudo password several times. This is required to pack the banchmark
+components into virtual disks.
