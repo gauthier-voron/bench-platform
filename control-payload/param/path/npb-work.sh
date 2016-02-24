@@ -17,6 +17,10 @@ if [ "x$active" = "xy" ] ; then
     export GOMP_SPINCOUNT=INFINITY
 fi
 
+if [ ! -d "control/log" ] ; then
+    mkdir "control/log"
+fi
+
 cd npb
 
 export OMP_NUM_THREADS=$cores

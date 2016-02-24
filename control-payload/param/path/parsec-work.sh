@@ -29,6 +29,10 @@ if [ "$#" -ne 0 ] ; then
     export PIN_RR="$*"
 fi
 
+if [ ! -d "$logbase" ] ; then
+    mkdir "$logbase"
+fi
+
 
 thread=$cores
 
