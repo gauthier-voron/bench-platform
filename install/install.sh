@@ -13,4 +13,5 @@ install-control.sh
 install-null.sh
 install-npb.sh
 install-parsec.sh
+install-mosbench.sh
 install-vm-hvm-base.sh

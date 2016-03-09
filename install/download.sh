@@ -4,6 +4,11 @@
 # If a third parameter is provided, it is a md5 checksum which is checked
 # against the received file with the command md5sum
 
+if [ "x$1" = "x-g" ] || [ "x$1" = "x--git" ] ; then
+    GITDL=1
+    shift
+fi
+
 SOURCE="$1" ; shift
 TARGET="$1" ; shift
 MD5SUM="$1" ; shift
@@ -21,7 +26,7 @@ download()
 {
     dl=`which curl`
     if [ $? -eq 0 ] ; then
-	if $dl $SOURCE > $TARGET ; then
+	if $dl -L "$SOURCE" > "$TARGET" ; then
 	    return 0
 	else
 	    return 1
@@ -30,10 +35,25 @@ download()
 
     dl=`which wget`
     if [ $? -eq 0 ] ; then
-	if $dl $SOURCE -O $TARGET ; then
+	if $dl "$SOURCE" -O "$TARGET" ; then
 	    return 0
 	else
+	    return 1
+	fi
+    fi
+
+    return 2
+}
+
+git_download()
+{
+    dl=`which git`
+    if [ $? -eq 0 ] ; then
+	export GIT_SSL_NO_VERIFY=1
+	if $dl clone --progress "$SOURCE" "$TARGET" ; then
 	    return 0
+	else
+	    return 1
 	fi
     fi
 
@@ -47,7 +67,15 @@ checksum()
 	return 2
     fi
 
-    sum=`$ck "$TARGET" | cut -d' ' -f1`
+    if [ -f "$TARGET" ] ; then
+	sum=`$ck "$TARGET" | cut -d' ' -f1`
+    elif [ -d "$TARGET" ] ; then
+	sum=`find "$TARGET" -type f | grep -v '.git' | sort \
+	    | xargs $ck | $ck | cut -d' ' -f1`
+    else
+	return 2
+    fi
+
     if [ $sum != $MD5SUM ] ; then
 	return 1
     fi
@@ -56,7 +84,11 @@ checksum()
 }
 
 
-download
+if [ "x$GITDL" != "x" ] ; then
+    git_download
+else
+    download
+fi
 case $? in
     1)
 	echo "$0: failed to download '$SOURCE'" >&2

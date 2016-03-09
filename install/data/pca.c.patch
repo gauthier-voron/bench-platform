@@ -1,0 +1,10 @@
+519,520d518
+< 	free(pca_cov_vals.data[i].val);
+< 	free(pca_cov_vals.data[i].key);
+523,528d520
+<     free(pca_cov_vals.data);
+<     for (i = 0; i < rows; i++) {
+< 	free(pca_mean_vals.data[i].val);
+< 	free(pca_data.matrix[i]);
+<     }
+<     free(pca_data.matrix);
