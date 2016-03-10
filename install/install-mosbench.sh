@@ -74,7 +74,7 @@ mkdir payload/memcached
 (
     cd libmemcached-1.0.18
     ./configure --enable-memaslap
-    make all
+    make all -j $CORES
 )
 mv mosbench/memcached/memcached-1.4.5/memcached payload/memcached
 mv libmemcached-1.0.18/clients/memaslap payload/memcached
