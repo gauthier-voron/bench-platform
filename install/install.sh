@@ -14,4 +14,5 @@ install-null.sh
 install-npb.sh
 install-parsec.sh
 install-mosbench.sh
+install-tpce.sh
 install-vm-hvm-base.sh
