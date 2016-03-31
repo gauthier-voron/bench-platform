@@ -1,0 +1,15 @@
+control-payload/param/path/activecond/lib
+control-payload/param/path/busyloop/busyloop
+control-payload/param/path/chronometer/lib
+control-payload/param/path/pin
+control-payload/param/path/rusage/rusage
+
+control-payload/param/image
+null-payload/param/image
+vm-hvm-base
+
+mosbench-payload
+npb-payload
+parsec-payload
+tpce-payload
+
