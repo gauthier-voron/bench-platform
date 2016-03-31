@@ -141,6 +141,9 @@ check_config_options()
 	    bt.?|dc.?|cg.?|ep.?|ft.?|is.?|lu.?|mg.?|sp.?|ua.?)
 	        benchsets[${index}]=npb
 		;;
+	    matrix|wrmem|kmeans|wc|wr|pca|psearchy|memcached)
+		benchsets[${index}]=mosbench
+		;;
             null)
                 benchsets[${index}]=null
                 ;;

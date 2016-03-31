@@ -3,10 +3,6 @@
 
 case "$1" in
     pre)
-	for p in `perl -wnl -e '/^processor\s+:\s+(\d+)/ and print $1' \
-                      /proc/cpuinfo` ; do
-	    xl vcpu-pin 0 $p $p
-	done
 	xen-trigger -12
 	;;
     post)

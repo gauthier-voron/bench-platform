@@ -6,12 +6,16 @@ set -e
 
 
 IPATH="`realpath \"${0%/*}\"`"
+PATH="$IPATH":"$PATH"
+DATA="$IPATH/data"
 
 if [ "x`whoami`" = "xroot" ] ; then
     SUDO=
 else
     SUDO=sudo
 fi
+
+PIN=https://github.com/gauthier-voron/pin/archive/master.zip
 
 PAYLOAD=control-payload
 
@@ -22,5 +26,19 @@ if [ ! -e "$PAYLOAD" ] ; then
 fi
 
 
-make all -C "$PAYLOAD/param/path"
+prevpwd="`pwd`"
+cd "$PAYLOAD/param/path"
+
+download.sh "$PIN" pin-master.zip
+unzip pin-master.zip
+rm -rf pin || true 2>/dev/null
+mv pin-master pin
+rm pin-master.zip
+make all -C pin
+
+make all
+
+cd "$prevpwd"
+
 $SUDO "`realpath \"$PAYLOAD\"`/method/pack"
+
