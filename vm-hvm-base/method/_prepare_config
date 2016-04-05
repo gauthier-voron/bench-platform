@@ -1,0 +1,42 @@
+#!/bin/sh
+
+cache_param="private/cache/param"
+cache_disk="private/cache/disk"
+
+
+memory=`cat ${cache_param}/memory`
+vcpus=`cat ${cache_param}/vcpus`
+name=`cat ${cache_param}/name`
+serial=`cat ${cache_param}/serial`
+vif=`cat ${cache_param}/vif`
+cpus=`cat ${cache_param}/cpus`
+
+disks="\"${PWD}/private/xvda.img,raw,xvda,rw\""
+for f in "${cache_disk}/"* ; do
+    if [ ! -e "${f}" ] ; then
+	break
+    fi
+    file="${f##*/}"
+    path=`head -n 1 "${f}"`
+    disks="${disks} , \"${path},raw,${file},rw\""
+done
+
+
+(
+    echo "builder = \"hvm\""
+    echo "name    = \"${name}\""
+    echo "memory  = ${memory}"
+    echo "vcpus   = ${vcpus}"
+    
+    if [ "x${serial}" != "x" ] ; then
+	echo "serial  = \"${serial}\""
+    fi
+    if [ "x${vif}" != "x" ] ; then
+	echo "vif     = [ \"bridge=${vif}\" ]"
+    fi
+    if [ "x${cpus}" != "x" ] ; then
+    	echo "cpus    = [ ${cpus} ]"
+    fi
+
+    echo "disk    = [ ${disks} ]"
+) > "private/xen-config"

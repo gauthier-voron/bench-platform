@@ -6,7 +6,7 @@ control-payload/param/path/rusage/rusage
 
 control-payload/param/image
 null-payload/param/image
-vm-hvm-base
+vm-hvm-base/private/xvda.img
 
 mosbench-payload
 npb-payload

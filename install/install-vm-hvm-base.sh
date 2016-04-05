@@ -7,25 +7,26 @@ set -e
 IPATH="`realpath \"${0%/*}\"`"
 PATH="$IPATH":"$PATH"
 
-DOWNLOAD=www.mnesic.fr/bigos/vm-xenhvm-linux3.9-replication+.tar.gz
-MD5SUM=6ce8cee5c0aecc48a2573cb67974d9a9
-VMBASE=vm-hvm-base
+DOWNLOAD=www.mnesic.fr/bigos/vm-xenhvm-linux3.9-replication+.xvda.img.gz
+MD5SUM=30befdc1fb56bd7c1b052e77d735c61f
+VMIMAGE=vm-hvm-base/private/xvda.img
 
 
-if [ -e "$VMBASE" ] ; then
-    echo "$0: vm image '$VMBASE' already exists" >&2
+if [ -e "$VMIMAGE" ] ; then
+    echo "$0: vm image '$VMIMAGE' already exists" >&2
     exit 1
 fi
 
 
-fakeroot="`mktemp -d install-vm-hvm-base-fakeroot.XXXXXX`"
+fakeroot="`mktemp -d install-vm-hvm-base-xvda-fakeroot.XXXXXX`"
 prevpwd="`pwd`"
 cd "$fakeroot"
 
-download.sh "$DOWNLOAD" image.tar.gz $MD5SUM
-tar -xzf image.tar.gz
+download.sh "$DOWNLOAD" xvda.img.gz $MD5SUM
+gunzip xvda.img.gz
 
 cd "$prevpwd"
 
-mv "$fakeroot/vm-xenhvm-linux3.9-replication+" "$VMBASE"
+mkdir -p "${VMIMAGE%/*}"
+mv "$fakeroot/xvda.img" "$VMIMAGE"
 rm -rf "$fakeroot"

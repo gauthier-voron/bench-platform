@@ -1,0 +1,8 @@
+#!/bin/sh
+
+disk="private/xvda.img"
+mntp=`mktemp -d`
+
+mount -o loop,offset=1048576 "${disk}" "${mntp}"
+
+echo "${mntp}"

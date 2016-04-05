@@ -1,0 +1,16 @@
+#!/bin/sh
+
+# Getting the self root
+
+self="${0%method/*}"
+
+
+prefix=root@`cat "${self}/private/cache/param/ip"`
+command="scp -o StrictHostKeyChecking=no"
+
+for arg in "$@" ; do
+    arg=`echo "$arg" | sed "s/^:/$prefix:/"`
+    command="${command} \"${arg}\""
+done
+
+eval `echo "${command}"`
