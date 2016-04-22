@@ -57,13 +57,22 @@ echo "${serial}" > "${cache_param}/serial"
 vif=`cat param/vif 2>/dev/null`
 echo "${vif}" > "${cache_param}/vif"
 
-# The Xen configuration file is unable to understand complex pinning, so only
-# write the concerned cpus in the config file, then make the actual pinning
-# later
 pin=`cat param/pin 2>/dev/null`
+echo "${pin}" > "${cache_param}/pin"
+
+map=`cat param/map 2>/dev/null`
+pname="mpa"
+if [ "x${map}" = "x" ] ; then
+    map="${pin}"
+    pname="pin"
+fi
+
+# The Xen configuration file is unable to understand complex pinning, so
+# only write the concerned cpus in the config file, then make the actual
+# pinning later
 cpus=
-if [ "x${pin}" != "x" ] ; then
-    for spec in ${pin} ; do
+if [ "x${map}" != "x" ] ; then
+    for spec in ${map} ; do
 	while [ "x$spec" != "x" ] ; do
 	    range="${spec%%,*}"
 
@@ -71,16 +80,16 @@ if [ "x${pin}" != "x" ] ; then
 	    end="${range#*-}"
 
 	    if ! echo $start | grep -Eq '^[[:digit:]]+$' ; then
-		echo "$0: bad parameter pin : '${pin}'" >&2
+		echo "$0: bad parameter $pname : '${map}'" >&2
 		exit 2
 	    fi
 	    if ! echo $end | grep -Eq '^[[:digit:]]+$' ; then
-		echo "$0: bad parameter pin : '${pin}'" >&2
+		echo "$0: bad parameter $pname : '${map}'" >&2
 		exit 2
 	    fi
 
 	    if [ $start -gt $end ] ; then
-		echo "$0: bad parameter pin : '${pin}'" >&2
+		echo "$0: bad parameter $pname : '${map}'" >&2
 	    fi
 
 	    for core in `seq $start $end` ; do
@@ -117,7 +126,6 @@ if [ "x${pin}" != "x" ] ; then
     done
 fi
 echo "${cpus}" > "${cache_param}/cpus"
-echo "${pin}" > "${cache_param}/pin"
 
 # Fill the cache with the matching (partition file, partition type, partition
 # name).

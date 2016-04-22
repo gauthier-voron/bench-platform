@@ -31,7 +31,17 @@ fi
 # Wait for the VM to be operational
 
 while true ; do
-    ssh -o StrictHostKeyChecking=no `cat private/cache/param/ip` "uname -a" >/dev/null 2>/dev/null && break
+    ssh -o StrictHostKeyChecking=no -o ControlMaster=yes \
+	-o ControlPath=private/ssh-control.sock \
+	`cat "private/cache/param/ip"` -N >/dev/null 2>/dev/null &
+    pid=$!
+    while ps $pid >/dev/null && [ ! -e private/ssh-control.sock ] ; do
+	sleep 1
+    done
+    if [ -e private/ssh-control.sock ] ; then
+	break
+    fi
+    
     sleep 5
 done
 

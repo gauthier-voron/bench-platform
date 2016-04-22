@@ -1,0 +1,95 @@
+#!/usr/bin/perl -l
+
+use strict;
+use warnings;
+
+
+my %PRE_STATS;
+my %POST_STATS;
+
+
+sub getstats
+{
+    my @lines;
+    my ($line, %stats);
+
+    @lines = split("\n", `cat /proc/net/dev`);
+    
+    foreach $line (@lines) {
+	next if (!($line =~ /^\s*([^:]+):\s+(\d+)(?:\s+\d+){7}\s+(\d+)/));
+	$stats{$1} = $2 . ':' . $3;
+    }
+
+    return %stats;
+}
+
+
+sub terminate
+{
+    my ($device, $pre_read, $post_read, $pre_write, $post_write);
+
+    %POST_STATS = getstats();
+
+    printf("device read write\n");
+    foreach $device (sort(keys(%POST_STATS))) {
+	($pre_read, $pre_write) = split(':', $PRE_STATS{$device});
+	($post_read, $post_write) = split(':', $POST_STATS{$device});
+	
+	printf("%s %d %d\n", $device,
+	       $post_read - $pre_read,
+	       $post_write - $pre_write);
+    }
+
+    exit (0);
+}
+
+
+sub usage
+{
+    return <<"EOF"
+Usage: $0 [-h | --help]
+Measure the amount of read/written bytes on each network device.
+When the program is launched, it start measuring and waits a signal. When it
+receive either a SIGINT or a SIGTERM, the mesaure is stopped and the results
+are printed on the standard output.
+
+Options:
+  -h, --help   Prints this help message and exits.
+EOF
+}
+
+sub error
+{
+    printf(STDERR "%s: %s\n", $0, @_);
+    printf(STDERR "Please type '$0 --help' for more informations\n");
+    exit (1);
+}
+
+sub main
+{
+    my $option;
+    
+    while (@_) {
+	$option = shift();
+	if ($option eq '-h' || $option eq '--help') {
+	    printf("%s", usage());
+	    exit (0);
+	} else {
+	    error("unexpected operand '$option'");
+	}
+    }
+    
+    %PRE_STATS = getstats();
+
+    $SIG{INT} = \&terminate;
+    $SIG{TERM} = \&terminate;
+
+    while (1) {
+	sleep(3600);
+    }
+
+    return 1;
+}
+
+exit (main(@ARGV));
+__END__

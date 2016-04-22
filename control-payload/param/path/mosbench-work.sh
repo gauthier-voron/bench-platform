@@ -25,7 +25,10 @@ case "$PKG" in
 	;;
     psearchy)
 	export LD_LIBRARY_PATH="`pwd`/mosbench/psearchy/lib:$LD_LIBRARY_PATH"
-	for i in `seq 0 $CORES` ; do mkdir mosbench/psearchy/db$i ; done
+	for i in `seq 0 $CORES` ; do
+	    rm -rf mosbench/psearchy/db$i 2>/dev/null
+	    mkdir mosbench/psearchy/db$i
+	done
 	command="./psearchy/pedsort -t psearchy/db -c $CORES -m 1024 \
 	       < words/pedsort-input.txt"
 	;;
@@ -43,7 +46,7 @@ run()
 
     (
 	cd mosbench
-	command="'$control/rusage/rusage' $command \
+	command="rusage $command \
                  | tee '$LOGBASE/${PKG}-${suffix}.log'"
 
 	export LD_PRELOAD="${PRELOAD}"

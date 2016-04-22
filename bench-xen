@@ -8,6 +8,7 @@ machines=()
 memories=()
 vcpus=()
 pins=()
+maps=()
 names=()
 commands=()
 tmpfs=()
@@ -76,6 +77,7 @@ parse_config_options()
 	long_options=${long_options},"vcpus-${machine}:"
 	long_options=${long_options},"pin-${machine}:"
 	long_options=${long_options},"tpin-${machine}:"
+	long_options=${long_options},"map-${machine}:"
 	long_options=${long_options},"name-${machine}:"
 	long_options=${long_options},"command-${machine}:"
 	long_options=${long_options},"busyloop-${machine}:"
@@ -99,19 +101,21 @@ parse_config_options()
 		id=`machine_to_index "${1:8}"`; vcpus[${id}]="$2"; shift 2;;
 	    --pin-*     )
 		id=`machine_to_index "${1:6}"`; pins[${id}]="$2"; shift 2;;
-	    --tpin-*     )
+	    --tpin-*    )
 		id=`machine_to_index "${1:7}"`; tpins[${id}]="$2"; shift 2;;
+	    --map-*     )
+		id=`machine_to_index "${1:6}"`; maps[${id}]="$2"; shift 2;;
 	    --name-*    )
 		id=`machine_to_index "${1:7}"`; names[${id}]="$2"; shift 2;;
 	    --command-* )
 		id=`machine_to_index "${1:10}"`;commands[${id}]="$2"; shift 2;;
-	    --busyloop-* )
+	    --busyloop-*)
 		id=`machine_to_index "${1:11}"`;busyloops[${id}]="$2";shift 2;;
-	    --duration-* )
+	    --duration-*)
 		id=`machine_to_index "${1:11}"`;durations[${id}]="$2";shift 2;;
-	    --tempfs-* )
+	    --tempfs-*  )
 		id=`machine_to_index "${1:9}"`; tempfs[${id}]="y"; shift;;
-	    --active-* )
+	    --active-*  )
 		id=`machine_to_index "${1:9}"`; actives[${id}]="y"; shift;;
 	    --          )                          shift ; break ;;
 	    *           ) echo "?? $1"           ; shift         ;;
@@ -249,8 +253,9 @@ instancify_machines()
 	ip="192.168.0.${iplast}"
 	name=${names[${index}]}
 	memory=${memories[${index}]}
-	vcpus=${vcpus[${index}]}
+	vcpuz=${vcpus[${index}]}
 	pin=${pins[${index}]}
+	map=${maps[${index}]}
 	benchset=${benchsets[${index}]}
 
 	if [ "x${name}" = "x" ] ; then
@@ -267,8 +272,9 @@ instancify_machines()
 	    echo "24"        > "${instance}/param/ipmask"
 	    echo "${memory}" > "${instance}/param/memory"
 	    echo "${pin}"    > "${instance}/param/pin"
+	    echo "${map}"    > "${instance}/param/map"
 	    echo "pty"       > "${instance}/param/serial"
-	    echo "${vcpus}"  > "${instance}/param/vcpus"
+	    echo "${vcpuz}"  > "${instance}/param/vcpus"
 	    echo "xenbr0"    > "${instance}/param/vif"
 	    echo "${name}"   > "${instance}/param/name"
 
@@ -517,6 +523,7 @@ print_config()
         echo "  vcpus    : '${vcpus[$index]}'"
         echo "  pinning  : '${pins[$index]}'"
         echo "  tpinning : '${tpins[$index]}'"
+        echo "  mmapping : '${maps[$index]}'"
         echo "  command  : '${commands[$index]}'"
 	echo "  busyloop : '${busyloops[$index]}'"
 	echo "  duration : '${durations[$index]}'"

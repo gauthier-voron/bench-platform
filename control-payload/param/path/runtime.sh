@@ -8,13 +8,37 @@
 DEADLINE=`date '+%s'`
 DEADLINE=$(( $DEADLINE + $TIME ))
 
-run       # Do the first, unbreakable run
+ctrldir="`pwd`/control"
+logdir="$ctrldir/log"
+bindir="$ctrldir/bin"
+
+export PATH="$bindir":"$PATH"
+
+
+_run_application()
+{
+    suffix="`date '+%Y-%m-%d-%H-%M-%S'`-`hostname`.log"
+    
+    soft-network > "$logdir/soft-network-$suffix" &
+    soft_network_pid=$!
+
+    soft-disk --sync > "$logdir/soft-disk-$suffix" &
+    soft_disk_pid=$!
+
+    run
+
+    kill $soft_disk_pid
+    kill $soft_network_pid
+    wait
+}
+
+_run_application       # Do the first, unbreakable run
 
 if [ `date '+%s'` -lt $DEADLINE ] ; then
     set -m
     (
 	while true ; do
-	    run          # Do additional runs
+	    _run_application          # Do additional runs
 	done
     ) &
     loop=$!

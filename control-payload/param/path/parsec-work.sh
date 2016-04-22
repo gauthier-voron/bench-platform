@@ -34,7 +34,7 @@ run()
 
 	export LD_PRELOAD="${PRELOAD}"
 	parsecmgmt -a run -p "${PKG}" -n "${thread}" -x pre -i native \
-		   -c "$type" -s "$control/rusage/rusage"
+		   -c "$type" -s rusage
     )
 
     mv "parsec/log/amd64-linux.$type.pre/run"*".log" \

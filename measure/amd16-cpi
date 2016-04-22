@@ -1,0 +1,88 @@
+#!/bin/sh
+
+
+xenseq=( 0  1  2  3  4  5
+         6  7  8  9 10 11
+        12 13 14 15 16 17
+        18 19 20 21 22 23
+        24 25 26 27 28 29
+        30 31 32 33 34 35
+        36 37 38 39 40 41
+        42 43 44 45 46 47)
+
+linuxseq=( 0  4  8 12 16 20
+	  24 28 32 36 40 44
+	   3  7 11 15 19 23
+	  27 31 35 39 43 47
+	   2  6 10 14 18 22
+	  26 30 34 38 42 46
+	   1  5  9 13 17 21
+	  25 29 33 37 41 45)
+
+mkswap()
+{
+    counters="$1" ; shift
+    swap='qw('
+    for counter in `seq 0 $(( $counters - 1 ))` ; do
+	for core in "$@" ; do
+	    swap="$swap $(( $core + $counter * $# ))"
+	done
+    done
+    swap="$swap)"
+    echo "$swap"
+}
+
+
+if xl info >/dev/null 2>/dev/null ; then
+    cores=0-47
+    swap="`mkswap 2 "${xenseq[@]}"`"
+else
+    cores=0-47
+    prehook="modprobe msr"
+    posthook="rmmod msr"
+    swap="`mkswap 2 "${linuxseq[@]}"`"
+fi
+
+
+case "$1" in
+    pre)
+	$prehook
+	;;
+    
+    run)
+	exec 1> "$LOGDIR/raw.dat"
+	exec rwmsr --core=$cores \
+	     0xc0010000=0x000430076@0-1000 \
+	     0xc0010001=0x0004300c0@0-1000 \
+	     \
+	     :0xc0010004=0@0-1000 \
+	     :0xc0010005=0@0-1000
+	;;
+
+    post)
+	$posthook
+	perl -wlan               -e "
+            BEGIN {
+                @swap = $swap; " -e '
+                printf("time");
+                foreach $core (0..47) { printf(" 000430076-%d", $core); }
+                foreach $core (0..47) { printf(" 0004300c0-%d", $core); }
+                printf("\n");
+            }
+
+            if ($. <= 2) {
+                next;
+            }
+
+            printf("%s ", shift(@F));
+            @F = map { $F[$_] } @swap;
+            printf("%s\n", join(" ", @F));
+
+        ' "$LOGDIR/raw.dat" > "$LOGDIR/msr.dat"
+	rm "$LOGDIR/raw.dat"
+	;;
+
+    *)
+	exit 1
+	;;
+esac

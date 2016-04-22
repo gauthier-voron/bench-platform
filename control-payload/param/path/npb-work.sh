@@ -11,7 +11,7 @@ run()
 	cd npb
 
 	export LD_PRELOAD="${PRELOAD}"
-	"$control"/rusage/rusage                      \
+	rusage                                        \
 	    ./NPB3.3-OMP/bin/${PKG}.x                 \
 	    | tee "${LOGBASE}/${PKG}-${suffix}.log"
     )

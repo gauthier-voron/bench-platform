@@ -4,4 +4,14 @@
 
 self="${0%method/*}"
 
-ssh -o StrictHostKeyChecking=no root@`cat "${self}/private/cache/param/ip"` "$@"
+
+# Permission checking
+
+if [ `whoami` != "root" ] ; then
+    echo "$0: you must be root" >&2
+    exit 1
+fi
+
+
+ssh -o ControlMaster=no -o ControlPath="${self}/private/ssh-control.sock" \
+    `cat "${self}/private/cache/param/ip"` "$@"

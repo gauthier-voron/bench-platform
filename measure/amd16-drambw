@@ -1,0 +1,88 @@
+#!/bin/sh
+# Give for each node :
+# - the amount of unhalted cpu clock          (UCLK)
+# - the amount of hexword transfered on DCT0  (DCT0)
+# - the amount of hexword transfered on DCT1  (DCT1)
+#
+# Can be used to obtain memory bandwidth per node :
+#
+#   BW = (DCT0 + DCT1) * 64 * freq / UCLK
+#
+# => BW   is the DRAM bandwith of the node in byte/second
+# => freq is the cpu frequency in clock/second
+#
+# Extract with :
+#
+#   perl -wlan    -e '
+#      BEGIN {
+#          printf("time");
+#          foreach $node (0..7) {
+#              printf(" \"DRAM bandwidth %d (B/s)\"", $node);
+#          }
+#      }
+#  
+#      if ($. == 1) {
+#          next;
+#      }
+#  
+#      printf("%s %s\n", $F[0], join(" ", map { sprintf("%.2f",
+#          ($F[9 + $_] + $F[17 + $_]) * 64 * 2200000000 / $F[1 + $_]
+#          ); } (0..7) ) );
+#  ' "$LOGDIR/msr.dat" > "$LOGDIR/bandwidth.dat"
+
+
+if xl info >/dev/null 2>/dev/null ; then
+    cores=1,7,13,19,25,31,37,43
+    swap="qw(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23)"
+else
+    cores=4,28,7,31,6,30,5,29
+    prehook="modprobe msr"
+    posthook="rmmod msr"
+    swap="qw(0 4 3 7 2 6 1 5 8 12 11 15 10 14 9 13 16 20 19 23 18 22 17 21)"
+fi
+
+case "$1" in
+    pre)
+        $prehook
+	;;
+    
+    run)
+	exec 1> "$LOGDIR/raw.dat"
+	exec rwmsr --core=$cores \
+	      0xc0010000=0x000430076@0-1000  \
+	      0xc0010001=0x0004307e0@0-1000  \
+	      0xc0010002=0x0004338e0@0-1000  \
+	      \
+	      :0xc0010004=0@0-1000 \
+	      :0xc0010005=0@0-1000 \
+	      :0xc0010006=0@0-1000
+	;;
+    
+    post)
+        $posthook
+	perl -wlan                -e "
+	    BEGIN {
+                @swap = $swap;  " -e '
+	        printf("time");
+                foreach $node (0..7) { printf(" 000430076-%d", $node); }
+                foreach $node (0..7) { printf(" 0004307e0-%d", $node); }
+                foreach $node (0..7) { printf(" 0004338e0-%d", $node); }
+                printf("\n");
+            }
+
+            if ($. <= 2) {
+                next;
+            }
+
+            printf("%s ", shift(@F));
+            @F = map { $F[$_] } @swap;
+            printf("%s\n", join(" ", @F));
+
+            ' "$LOGDIR/raw.dat" > "$LOGDIR/msr.dat"
+	rm "$LOGDIR/raw.dat"
+	;;
+
+    *)
+	exit 1
+	;;
+esac

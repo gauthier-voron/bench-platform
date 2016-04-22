@@ -38,6 +38,9 @@ make all -C pin
 
 make all
 
+mv pin/bin/scanpin bin
+mv rusage/rusage bin
+
 cd "$prevpwd"
 
 $SUDO "`realpath \"$PAYLOAD\"`/method/pack"
